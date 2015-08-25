@@ -1,0 +1,70 @@
+ # -*- coding: utf-8 -*- 
+import MySQLdb
+import os
+import re
+import threading
+import subprocess
+##########连接数据库-ip，逐条输出ip进行扫描
+conn = MySQLdb.connect(host="localhost",user="root",passwd="qll",db="scan",port=3036,charset="utf8",unix_socket="/tmp/mysql.sock")
+cur = conn.cursor()
+cur = conn.cursor(cursorclass=MySQLdb.cursors.DictCursor)
+cur.execute("select * from ip")
+cur.scroll(0,"absolute")
+for line in cur.fetchall():
+#	print line["ip"]
+##########针对同一IP进行多线程（同一时刻并发扫描，提高效率）端口扫描，并给出扫描结果1-3.txt
+	path1 = './masscan -p 0-100 -oX 1.txt ' + line["ip"]
+	path2 = './masscan -p 0-100 -oX 2.txt ' + line["ip"]
+	path3 = './masscan -p 0-100 -oX 3.txt ' + line["ip"]
+	threads = []
+	t1 = threading.Thread(target = os.system, args = (path1,))
+	threads.append(t1)
+	t2 = threading.Thread(target = os.system, args = (path2,))
+	threads.append(t2)
+	t3 = threading.Thread(target = os.system, args = (path3,))
+	threads.append(t3)
+	for t in threads:
+		t.setDaemon(True)
+		t.start()
+	t.join()
+##########对扫描结果进行合并、去重，并将端口和ip录入数据库
+	os.system('cat 1.txt 2.txt 3.txt > 4.txt')
+	f1 = open('unite.txt', 'w')
+	with open('4.txt') as f:
+		for line in f:
+			match = re.search('addr="(\d+.\d+.\d+.\d+)" addrtype="ipv4"/><ports><port protocol="tcp" portid="(\w{1,5})"', line)
+			if match is None:
+				continue
+			mip = match.group(1)
+			mport = match.group(2)
+			print >> f1,mip,mport
+	f1.close()                           #差这个下42-48执行输出空值
+	obuff = []
+	for ln in open('unite.txt'):
+		if ln in obuff:
+			continue
+		obuff.append(ln)
+	with open('5.txt', 'w') as handle:
+		handle.writelines(obuff)
+##########根据去重后的结果，将ip与端口对应关系写入数据库-scan
+	with open('5.txt') as f:
+		for line in f:
+			match = re.search('(\d+.\d+.\d+.\d+) (\w{1,5})', line)
+			if match is None:
+				continue
+			mip = match.group(1)
+			mport = match.group(2)
+#			print mip,mport
+			conn = MySQLdb.connect(host="localhost",user="root",passwd="qll",db="scan",port=3036,charset="utf8",unix_socket="/tmp/mysql.sock")
+			cur = conn.cursor()
+			cur.execute("insert into scan (ip,port,service) values (%s,%s,%s)",(mip,mport,"333"))
+	conn.commit()
+
+	
+	
+	
+	
+	
+	
+	
+	
